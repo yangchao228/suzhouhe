@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import { spots } from '../data/spots';
+import React, { useEffect, useRef, useState } from 'react';
 
 const Map = ({ onSpotClick }) => {
   const mapRef = useRef(null);
@@ -10,162 +9,108 @@ const Map = ({ onSpotClick }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // 1. 首先加载脚本
   useEffect(() => {
-    // Load AMap
-    const loadAMap = async () => {
+    const loadScripts = async () => {
       try {
-        // Ensure map container exists before proceeding
-        if (!mapRef.current) {
-          throw new Error('Map container not ready');
-        }
-
-        // Create security JsCode
+        // 创建安全密钥配置
         window._AMapSecurityConfig = {
-          securityJsCode: '2aeef1fbf6bc523430d605f9f83c0810'
+          securityJsCode: 'ba96992507f730d0c4ee7a313c2fc66c'
         };
 
-        // Load main AMap script
-        await new Promise((resolve, reject) => {
-          if (window.AMap) {
-            resolve();
-            return;
-          }
-          const AMapScript = document.createElement('script');
-          AMapScript.src = 'https://webapi.amap.com/maps?v=2.0&key=b6d99d25c9ee96f14284ac00736b544b';
-          AMapScript.async = true;
-          AMapScript.onerror = () => {
-            reject(new Error('Failed to load AMap script'));
-          };
-          AMapScript.onload = () => {
-            // Give a small delay to ensure AMap is fully initialized
-            setTimeout(resolve, 100);
-          };
-          document.head.appendChild(AMapScript);
-        });
-
-        // Load AMap UI library
-        await new Promise((resolve, reject) => {
-          if (window.AMapUI) {
-            resolve();
-            return;
-          }
-          const AMapUIScript = document.createElement('script');
-          AMapUIScript.src = 'https://webapi.amap.com/ui/1.1/main.js';
-          AMapUIScript.async = true;
-          AMapUIScript.onerror = () => {
-            reject(new Error('Failed to load AMapUI script'));
-          };
-          AMapUIScript.onload = () => {
-            // Give a small delay to ensure AMapUI is fully initialized
-            setTimeout(resolve, 100);
-          };
-          document.head.appendChild(AMapUIScript);
-        });
-
-        await initMap();
+        await loadMapScript();
+        await loadUIScript();
         setIsLoading(false);
       } catch (err) {
-        console.error('Error loading map:', err);
+        console.error('Error loading scripts:', err);
         setError(err.message);
-        setIsLoading(false);
       }
     };
 
-    const initMap = async () => {
-      if (!window.AMap) {
-        throw new Error('AMap is not loaded');
-      }
+    loadScripts();
+  }, []);
 
-      // Double check map container exists
-      if (!mapRef.current) {
-        throw new Error('Map container div not exist');
-      }
+  // 2. 脚本加载完成后，初始化地图
+  useEffect(() => {
+    if (!isLoading && mapRef.current && !map && !error) {
+      const initializeMap = async () => {
+        try {
+          await initMap();
+        } catch (err) {
+          console.error('Error initializing map:', err);
+          setError(err.message);
+        }
+      };
 
+      initializeMap();
+    }
+  }, [isLoading, mapRef.current]);
+
+  const loadMapScript = () => {
+    return new Promise((resolve, reject) => {
+      if (window.AMap) {
+        resolve();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://webapi.amap.com/maps?v=2.0&key=9fca23a2f75cc59b2d75ab6e99e54326';
+      script.async = true;
+      script.onload = () => {
+        setTimeout(resolve, 100);
+      };
+      script.onerror = () => reject(new Error('Failed to load AMap script'));
+      document.head.appendChild(script);
+    });
+  };
+
+  const loadUIScript = () => {
+    return new Promise((resolve, reject) => {
+      if (window.AMapUI) {
+        resolve();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://webapi.amap.com/ui/1.1/main.js';
+      script.async = true;
+      script.onload = () => {
+        // 给予一点加载时间
+        setTimeout(resolve, 100);
+      };
+      script.onerror = () => reject(new Error('Failed to load AMapUI script'));
+      document.head.appendChild(script);
+    });
+  };
+
+  const initMap = async () => {
+    return new Promise((resolve, reject) => {
       try {
+        if (!window.AMap) {
+          reject(new Error('AMap is not loaded'));
+          return;
+        }
+
+        if (!mapRef.current) {
+          reject(new Error('Map container div not exist'));
+          return;
+        }
+
         // Initialize map centered on Suzhou River (Shanghai)
         const mapInstance = new window.AMap.Map(mapRef.current, {
           zoom: 13,
-          center: [121.4737, 31.2304], // Suzhou River coordinates
+          center: [121.4737, 31.2304],
           viewMode: '3D',
           resizeEnable: true
         });
 
-        // Wait for map to be ready
-        await new Promise((resolve) => {
-          mapInstance.on('complete', resolve);
-          // Set a timeout in case the complete event doesn't fire
-          setTimeout(resolve, 2000);
+        mapInstance.on('complete', () => {
+          setMap(mapInstance);
+          resolve(mapInstance);
         });
-
-        setMap(mapInstance);
-
-        // Create markers for each spot
-        const markerInstances = spots.map(spot => {
-          try {
-            const marker = new window.AMap.Marker({
-              position: new window.AMap.LngLat(spot.coordinates[0], spot.coordinates[1]),
-              title: spot.name,
-              animation: 'AMAP_ANIMATION_DROP'
-            });
-
-            // Add click event to marker
-            marker.on('click', () => {
-              if (infoWindow) {
-                infoWindow.close();
-              }
-
-              const info = new window.AMap.InfoWindow({
-                content: `
-                  <div class="info-window">
-                    <h3 class="text-lg font-bold">${spot.name}</h3>
-                    <p class="mt-2">${spot.description}</p>
-                  </div>
-                `,
-                offset: new window.AMap.Pixel(0, -30)
-              });
-
-              info.open(mapInstance, marker.getPosition());
-              setInfoWindow(info);
-              
-              if (onSpotClick) {
-                onSpotClick(spot);
-              }
-            });
-
-            return marker;
-          } catch (err) {
-            console.error(`Error creating marker for spot ${spot.name}:`, err);
-            return null;
-          }
-        }).filter(Boolean); // Remove any null markers
-
-        // Add markers to map
-        mapInstance.add(markerInstances);
-        setMarkers(markerInstances);
-
-        // Add map controls
-        try {
-          mapInstance.addControl(new window.AMap.Scale());
-          mapInstance.addControl(new window.AMap.ToolBar({
-            position: 'LT'
-          }));
-        } catch (err) {
-          console.error('Error adding map controls:', err);
-        }
       } catch (err) {
-        throw new Error(`Failed to initialize map: ${err.message}`);
+        reject(err);
       }
-    };
-
-    loadAMap();
-
-    // Cleanup
-    return () => {
-      if (map) {
-        map.destroy();
-      }
-    };
-  }, []);
+    });
+  };
 
   if (isLoading) {
     return (
